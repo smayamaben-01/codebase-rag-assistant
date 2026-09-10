@@ -19,7 +19,8 @@ def extract_chunks(filepath):
                 "name": node.name,
                 "code": chunk_code,
                 "docstring": docstring,
-                "file_path": filepath
+                "file_path": filepath,
+                "start_line": node.lineno
             })
 
     return chunks

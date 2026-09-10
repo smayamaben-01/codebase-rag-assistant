@@ -122,3 +122,8 @@ Before you call this "resume-ready," you should be able to explain without notes
 |---|---|---|---|
 | 10-08-2026 | Index FastAPI's /fastapi/ source dir only | Full repo (docs+tests+translations) would dilute retrieval relevance and slow MVP | Indexing entire repo |
 
+Naive chunking: scores 0.19-0.28, mostly whole-file dilution. AST chunking: scores 0.34-0.38, but ranking still imperfect — most relevant chunk (Depends class) ranked #3 instead of #1, showing vector-only search's limitation with exact terminology. Motivates Phase 3 hybrid search.
+
+BM25-only: top-ranked chunk was a false positive — 'injection' matched but referred to XSS injection, not dependency injection. Demonstrates BM25's lack of semantic understanding. Motivates RRF merge with dense search.
+
+Hybrid search (dense + BM25 + RRF) eliminated false positives present in BM25-only results (e.g., _html_safe_json). However, RRF alone couldn't fully resolve near-duplicate entities (Depends class vs. Depends function) competing for the same concept — motivating re-ranking in Phase 4, where a cross-encoder can directly compare each candidate against the query for finer-grained relevance judgment.
