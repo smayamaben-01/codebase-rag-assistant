@@ -14,4 +14,4 @@ results = client.query_points(
 ).points
 
 for r in results:
-    print(r.payload["file_path"], "-score:", r.score)
+    print(r.payload["file_path"], "-", r.payload["name"], "- score:", r.score)
