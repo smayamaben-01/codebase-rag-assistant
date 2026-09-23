@@ -133,3 +133,13 @@ Cross-encoder re-ranking surfaced APIKeyHeader/APIKeyCookie above Depends itself
 Final pipeline test confirms the re-ranking result from Phase 4 was correct, not a flaw — combining Depends + APIKeyHeader in the prompt let the LLM generate a concrete usage example rather than an abstract definition, producing a more useful answer than pure 'find the Depends definition' retrieval would have.
 
 Full eval (30 questions): avg precision@5 = 0.34, avg recall = 0.70. Identified a 'hub document' failure mode — applications.py's broad docstring caused it to be retrieved for many unrelated queries, diluting precision. Also found single-chunk files (e.g. security/base.py) are systematically under-retrieved regardless of relevance, suggesting chunk-count imbalance affects ranking.
+
+Hypothesis 'applications.py dominates due to one bloated docstring' was tested and disproven — no single chunk stood out (~230-650 chars, comparable to elsewhere). The real cause: applications.py contributes 28 chunks (2nd-highest of any file), many covering broadly-named HTTP method decorators (get/post/put/delete/middleware/exception_handler) that share vocabulary with many unrelated questions, giving the file a statistical retrieval advantage through sheer chunk volume rather than any one chunk's relevance.
+
+Local Ollama generation trades cost (free) for latency — noticeably slower than a cloud API would be, especially for longer answers. Streaming mitigates perceived slowness but doesn't reduce actual generation time.
+
+First FastAPI streaming endpoint test took 15-20 minutes per request — traced to embedding models and BM25 index being rebuilt from scratch on every request, since setup code sits at module level and reruns on each import/call. This is the direct motivation for Phase 6's caching: models and indices should load once at server startup, not per-request.
+
+Timing instrumentation isolated the bottleneck: retrieval (hybrid search + re-ranking) = 3.26s, generation (Ollama, CPU-only, no GPU) = 412s. Confirms the entire pipeline's speed is gated by local LLM inference, not retrieval. This is an inherent tradeoff of the free/local Ollama choice — a cloud API (Claude/GPT) would generate in 2-5s, but at real per-query cost.
+
+Tested 3 model sizes for generation: llama3.1:8b (412s, fully grounded, cites specific code), llama3.2:3b (230s, not fully tested for grounding quality), qwen2.5:1.5b (63s, but failed to ground its answer in retrieved context — gave a generic textbook definition instead of referencing actual FastAPI code). Concluded speed gains from smaller models come at a real cost to RAG's core value: grounding. Reverted to llama3.2:3b as the balance point.
