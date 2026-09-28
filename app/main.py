@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from .rag_pipeline import retrieve, generate_answer_stream
 import time
+import redis
 
 app = FastAPI()
+
+r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 @app.get("/health")
 def health():
@@ -11,16 +14,30 @@ def health():
 
 @app.get("/query")
 def query(question: str):
+    key = f"query:{question.strip().lower()}"
+    cached_response = r.get(key)
+
+    if cached_response is not None:
+        print("Cache HIT")
+
+        def cached_generator():
+            yield cached_response
+
+        return StreamingResponse(cached_generator(), media_type="text/plain")
+
+    print("Cache MISS")
     t0 = time.time()
     top_chunks = retrieve(question)
-    t1 = time.time()
-    print(f"Retrieval took: {t1 - t0:.2f}s")
-    print(f"Using model: llama3.2:3b")  # update this line manually whenever you swap models
+    print(f"Retrieval took: {time.time() - t0:.2f}s")
+    print("Using model: llama3.2:3b")  # update manually when you swap models
 
-    def timed_stream():
-        yield from generate_answer_stream(question, top_chunks)
+    def wrapper():
+        pieces = []
+        for piece in generate_answer_stream(question, top_chunks):
+            pieces.append(piece)
+            yield piece  # user sees it immediately
+        # only runs after the stream completes fully
+        r.set(key, "".join(pieces), ex=3600)
         print(f"Total (including generation): {time.time() - t0:.2f}s")
-        
 
-    return StreamingResponse(timed_stream(), media_type="text/plain")
-
+    return StreamingResponse(wrapper(), media_type="text/plain")

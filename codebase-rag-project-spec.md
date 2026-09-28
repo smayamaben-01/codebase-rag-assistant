@@ -143,3 +143,5 @@ First FastAPI streaming endpoint test took 15-20 minutes per request — traced 
 Timing instrumentation isolated the bottleneck: retrieval (hybrid search + re-ranking) = 3.26s, generation (Ollama, CPU-only, no GPU) = 412s. Confirms the entire pipeline's speed is gated by local LLM inference, not retrieval. This is an inherent tradeoff of the free/local Ollama choice — a cloud API (Claude/GPT) would generate in 2-5s, but at real per-query cost.
 
 Tested 3 model sizes for generation: llama3.1:8b (412s, fully grounded, cites specific code), llama3.2:3b (230s, not fully tested for grounding quality), qwen2.5:1.5b (63s, but failed to ground its answer in retrieved context — gave a generic textbook definition instead of referencing actual FastAPI code). Concluded speed gains from smaller models come at a real cost to RAG's core value: grounding. Reverted to llama3.2:3b as the balance point.
+
+Redis cache (query → response, 1hr TTL) cut a repeated query from 220s to ~1s. Implemented via a wrapper generator that streams pieces to the user while collecting them, writing to Redis only after the stream completes, so an interrupted request never caches a partial answer.
