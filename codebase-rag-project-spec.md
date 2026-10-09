@@ -147,3 +147,5 @@ Tested 3 model sizes for generation: llama3.1:8b (412s, fully grounded, cites sp
 Redis cache (query → response, 1hr TTL) cut a repeated query from 220s to ~1s. Implemented via a wrapper generator that streams pieces to the user while collecting them, writing to Redis only after the stream completes, so an interrupted request never caches a partial answer.
 
 Incremental re-indexing initially caused duplicate points (439 → 564) because the delete filter's file_path format didn't match what Phase 2's ingestion had stored (normalized vs. raw relative paths). Fixed by normalizing file_path once, at the chunking source (ast_chunker.py), and re-running full ingestion to bring existing data into a consistent format. Verified fix by re-running incremental re-index on routing.py and confirming point count stayed flat (439 → 439), proving delete-before-upsert now works correctly.
+
+Docker build took ~10 min, dominated by sentence-transformers/PyTorch installation (350s) and image layer export (257s). .dockerignore excluding data/fastapi-src/.git reduced build context from 92MB to 282KB.

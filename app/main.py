@@ -3,10 +3,12 @@ from fastapi.responses import StreamingResponse
 from .rag_pipeline import retrieve, generate_answer_stream
 import time
 import redis
+import os
 
 app = FastAPI()
 
-r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+r = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
 
 @app.get("/health")
 def health():

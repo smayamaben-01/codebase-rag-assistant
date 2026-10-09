@@ -3,8 +3,14 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 import os
-import ollama
 from .ast_chunker import extract_chunks
+
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "localhost")
+
+os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
+import ollama
 
 folder = os.path.join(os.path.dirname(__file__), "..", "data", "fastapi-src", "fastapi")
 
@@ -31,7 +37,7 @@ bm25 = BM25Okapi(tokenized_corpus)
 chunk_lookup = {(normalize_path(c["file_path"]), c["name"], c["start_line"]): c for c in all_chunks}
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
-client = QdrantClient(host="localhost", port=6333)
+client = QdrantClient(host=QDRANT_HOST, port=6333)
 reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 def retrieve(question, top_k=5):

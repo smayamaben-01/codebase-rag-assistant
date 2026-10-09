@@ -1,0 +1,6 @@
+data/fastapi-src/.git
+venv/
+__pycache__/
+*.pyc
+.env
+qdrant_storage/
