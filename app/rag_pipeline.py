@@ -4,6 +4,9 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient
 import os
 from .ast_chunker import extract_chunks
+import logging
+
+logger = logging.getLogger("rag")
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
@@ -108,8 +111,29 @@ Answer:"""
         stream=True
     )
 
+    last = None
     for chunk in response:
-        yield chunk['message']['content']
+        last = chunk
+        content = chunk.get('message', {}).get('content') if isinstance(chunk, dict) else getattr(getattr(chunk, 'message', None), 'content', '')
+        if content:
+            yield content
+
+    prompt_tokens = getattr(last, 'prompt_eval_count', None) if last else None
+    completion_tokens = getattr(last, 'eval_count', None) if last else None
+    eval_duration = getattr(last, 'eval_duration', None) if last else None
+    prompt_eval_duration = getattr(last, 'prompt_eval_duration', None) if last else None
+    prompt_eval_s = f"{prompt_eval_duration / 1e9:.1f}" if prompt_eval_duration else "n/a"
+
+    if last is None or not eval_duration:
+        tokens_per_s = "n/a"
+    else:
+        eval_duration_sec = eval_duration / 1e9
+        tokens_per_s = f"{completion_tokens / eval_duration_sec:.1f}" if completion_tokens is not None and eval_duration_sec > 0 else "n/a"
+
+    p_tokens_str = prompt_tokens if prompt_tokens is not None else "n/a"
+    c_tokens_str = completion_tokens if completion_tokens is not None else "n/a"
+    
+    logger.info("prompt_tokens=%s prompt_eval_s=%s completion_tokens=%s tokens_per_s=%s", p_tokens_str, prompt_eval_s, c_tokens_str, tokens_per_s)
 
 if __name__ == "__main__":
     question = "How does dependency injection work?"
