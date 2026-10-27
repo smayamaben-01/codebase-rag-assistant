@@ -4,6 +4,11 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
 from sentence_transformers import SentenceTransformer
 from ast_chunker import extract_chunks
 import os
+import hashlib
+
+def stable_id(file_path, name, start_line):
+    digest = hashlib.md5(f"{file_path}:{name}:{start_line}".encode()).hexdigest()
+    return int(digest[:15], 16)
 
 def get_changed_files(old_commit, new_commit):
     result = subprocess.run(
@@ -43,7 +48,7 @@ def reindex_file(full_path_in_repo):
         embed_text = c["docstring"] + "\n" + c["code"]
         vector = model.encode(embed_text)
         points.append(PointStruct(
-            id=hash((normalized, c["name"], c["start_line"])) & 0x7FFFFFFF,
+            id=stable_id(normalized, c["name"], c["start_line"]),
             vector=vector.tolist(),
             payload={**c, "file_path": normalized}
         ))

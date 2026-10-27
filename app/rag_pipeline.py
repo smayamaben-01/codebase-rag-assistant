@@ -43,17 +43,30 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 client = QdrantClient(host=QDRANT_HOST, port=6333)
 reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
-def retrieve(question, top_k=5):
-    question_vector = model.encode(question)
-    dense_results = client.query_points(
-        collection_name="codebase_chunks", query=question_vector.tolist(), limit=15
-    ).points
-    dense_ranked = [(normalize_path(r.payload["file_path"]), r.payload["name"], r.payload["start_line"]) for r in dense_results]
+def _top_chunks(keys, top_k):
+    return [chunk_lookup[k] for k in keys[:top_k]]
 
-    tokenized_query = tokenize(question)
-    scores = bm25.get_scores(tokenized_query)
-    top_bm25_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:15]
-    bm25_ranked = [(normalize_path(all_chunks[i]["file_path"]), all_chunks[i]["name"], all_chunks[i]["start_line"]) for i in top_bm25_indices]
+
+def retrieve(question, top_k=5, mode="rerank"):
+    if mode not in ("dense", "bm25", "hybrid", "rerank"):
+        raise ValueError(f"Unknown retrieval mode: {mode}")
+
+    if mode in ("dense", "hybrid", "rerank"):
+        question_vector = model.encode(question)
+        dense_results = client.query_points(
+            collection_name="codebase_chunks", query=question_vector.tolist(), limit=15
+        ).points
+        dense_ranked = [(normalize_path(r.payload["file_path"]), r.payload["name"], r.payload["start_line"]) for r in dense_results]
+        if mode == "dense":
+            return _top_chunks(dense_ranked, top_k)
+
+    if mode in ("bm25", "hybrid", "rerank"):
+        tokenized_query = tokenize(question)
+        scores = bm25.get_scores(tokenized_query)
+        top_bm25_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:15]
+        bm25_ranked = [(normalize_path(all_chunks[i]["file_path"]), all_chunks[i]["name"], all_chunks[i]["start_line"]) for i in top_bm25_indices]
+        if mode == "bm25":
+            return _top_chunks(bm25_ranked, top_k)
 
     k = 60
     rrf_scores = {}
@@ -63,6 +76,8 @@ def retrieve(question, top_k=5):
         rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (k + rank)
 
     hybrid_top15 = [key for key, _ in sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:15]]
+    if mode == "hybrid":
+        return _top_chunks(hybrid_top15, top_k)
 
     candidates = [chunk_lookup[key] for key in hybrid_top15]
     pairs = [(question, c["docstring"] + "\n" + c["code"]) for c in candidates]
