@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase Intelligence RAG Assistant</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #ffffff; --text: #1f2328; --muted: #6b7280;
+    --border: #e2e4e8; --accent: #3b5bdb; --user: #3b5bdb; --user-text: #ffffff;
+    --code-bg: #f1f3f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1c1f24; --text: #e6e8eb; --muted: #9aa0a6;
+      --border: #2d3138; --accent: #748ffc; --user: #3b5bdb; --user-text: #ffffff;
+      --code-bg: #12141a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { margin: 0; font-size: 17px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  main { flex: 1; overflow-y: auto; padding: 20px; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .msg { margin: 0 0 16px; display: flex; flex-direction: column; }
+  .msg.user { align-items: flex-end; }
+  .bubble {
+    padding: 10px 14px; border-radius: 14px; max-width: 100%;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .user .bubble { background: var(--user); color: var(--user-text); border-bottom-right-radius: 4px; }
+  .bot .bubble { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble pre {
+    white-space: pre; overflow-x: auto; margin: 8px 0; padding: 10px 12px; font-size: 13px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .bubble pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .hint { color: var(--muted); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .examples button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .examples button:hover { border-color: var(--accent); }
+  form { border-top: 1px solid var(--border); background: var(--panel); padding: 12px 20px; }
+  .row { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; }
+  input[type=text] {
+    flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button.send {
+    padding: 0 20px; border: 0; border-radius: 10px; background: var(--accent);
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.send:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Codebase Intelligence RAG Assistant</h1>
+    <p>Ask how something works in the FastAPI source. Answers are generated from the retrieved code.</p>
+  </header>
+
+  <main id="log">
+    <div class="wrap" id="wrap">
+      <div class="msg bot"><div class="bubble hint">Ask a question about the FastAPI codebase, or try one of these. Repeated questions are answered instantly from the cache.</div></div>
+      <div class="examples" id="examples"></div>
+    </div>
+  </main>
+
+  <form id="form">
+    <div class="row">
+      <input type="text" id="q" placeholder="e.g. How does APIRouter register routes?" autocomplete="off" required>
+      <button class="send" id="send" type="submit">Send</button>
+    </div>
+  </form>
+
+<script>
+  const wrap = document.getElementById("wrap");
+  const log = document.getElementById("log");
+  const form = document.getElementById("form");
+  const input = document.getElementById("q");
+  const sendBtn = document.getElementById("send");
+  const examples = document.getElementById("examples");
+
+  const EXAMPLES = [
+    "How does dependency injection work?",
+    "How does APIRouter register routes?",
+    "How does API key authentication work?",
+  ];
+  EXAMPLES.forEach(text => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = text;
+    b.onclick = () => { input.value = text; input.focus(); };
+    examples.appendChild(b);
+  });
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Minimal rendering: text outside ``` fences is plain, text inside becomes a code block.
+  function render(text) {
+    return text.split("```").map((part, i) =>
+      i % 2 === 1
+        ? `<pre><code>${esc(part.replace(/^[a-zA-Z]*\n/, ""))}</code></pre>`
+        : esc(part)
+    ).join("");
+  }
+
+  function addMessage(role, html) {
+    const msg = document.createElement("div");
+    msg.className = "msg " + role;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = html;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    msg.append(bubble, meta);
+    wrap.appendChild(msg);
+    log.scrollTop = log.scrollHeight;
+    return { bubble, meta };
+  }
+
+  async function ask(question) {
+    examples.remove();
+    addMessage("user", esc(question));
+    const bot = addMessage(
+      "bot",
+      '<span class="hint">Retrieving code and reading it. The first words can take a minute or two on a CPU-only machine.</span>'
+    );
+    const t0 = performance.now();
+    let text = "";
+    try {
+      const res = await fetch("/query?question=" + encodeURIComponent(question));
+      if (!res.ok) throw new Error("server returned " + res.status);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        bot.bubble.innerHTML = render(text);
+        log.scrollTop = log.scrollHeight;
+      }
+      if (!text) bot.bubble.innerHTML = esc("(the server returned an empty answer)");
+      bot.meta.textContent = "answered in " + ((performance.now() - t0) / 1000).toFixed(1) + " s";
+    } catch (err) {
+      bot.bubble.innerHTML = esc("Something went wrong: " + err.message);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const question = input.value.trim();
+    if (!question) return;
+    input.value = "";
+    input.disabled = true;
+    sendBtn.disabled = true;
+    await ask(question);
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  });
+</script>
+</body>
+</html>

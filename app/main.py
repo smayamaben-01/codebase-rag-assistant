@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from .rag_pipeline import retrieve, generate_answer_stream
 import time
 import redis
@@ -20,6 +20,10 @@ app = FastAPI()
 
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 r = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
+
+@app.get("/")
+def chat_page():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 @app.get("/health")
 def health():

@@ -5,3 +5,4 @@ __pycache__/
 venv/
 .venv/
 qdrant_storage/
+last_indexed_commit.txt
